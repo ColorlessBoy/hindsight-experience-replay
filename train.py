@@ -38,12 +38,12 @@ def launch(args):
     # create the ddpg_agent
     if args.alg == 'gac':
         # create the ddpg agent to interact with the environment 
-        printf("Using the generative policy.")
+        print("Using the generative policy.")
         gac_trainer = gac_agent(args, env, env_params)
         gac_trainer.learn()
     else:
         # create the ddpg agent to interact with the environment 
-        printf("Using the deterministic policy.")
+        print("Using the deterministic policy.")
         ddpg_trainer = ddpg_agent(args, env, env_params)
         ddpg_trainer.learn()
 
