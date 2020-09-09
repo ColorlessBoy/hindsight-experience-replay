@@ -34,14 +34,20 @@ class gac_agent:
         self.actor_target_network.load_state_dict(self.actor_network.state_dict())
         self.critic_target_network1.load_state_dict(self.critic_network1.state_dict())
         self.critic_target_network2.load_state_dict(self.critic_network2.state_dict())
+
         # if use gpu
+        self.rank = MPI.COMM_WORLD.Get_rank()
+        if args.cuda:
+            device = 'cuda:{}'.format(self.rank % torch.cuda.device_count())
+        self.device = torch.device(device)
+
         if self.args.cuda:
-            self.actor_network.cuda()
-            self.critic_network1.cuda()
-            self.critic_network2.cuda()
-            self.actor_target_network.cuda()
-            self.critic_target_network1.cuda()
-            self.critic_target_network2.cuda()
+            self.actor_network.cuda(self.device)
+            self.critic_network1.cuda(self.device)
+            self.critic_network2.cuda(self.device)
+            self.actor_target_network.cuda(self.device)
+            self.critic_target_network1.cuda(self.device)
+            self.critic_target_network2.cuda(self.device)
         # create the optimizer
         self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
         self.critic_optim1 = torch.optim.Adam(self.critic_network1.parameters(), lr=self.args.lr_critic)
@@ -54,7 +60,7 @@ class gac_agent:
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
         # create the dict for store the model
-        if MPI.COMM_WORLD.Get_rank() == 0:
+        if self.rank == 0:
             if not os.path.exists(self.args.save_dir):
                 os.mkdir(self.args.save_dir)
             # path to save the model
@@ -120,7 +126,7 @@ class gac_agent:
                 self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
             success_rate = self._eval_agent()
-            if MPI.COMM_WORLD.Get_rank() == 0:
+            if self.rank == 0:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
                 torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
                             self.model_path + '/model.pt')
@@ -133,7 +139,7 @@ class gac_agent:
         inputs = np.concatenate([obs_norm, g_norm])
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
-            inputs = inputs.cuda()
+            inputs = inputs.cuda(self.device)
         return inputs
     
     # this function will choose action for the agent and do the exploration
@@ -206,10 +212,10 @@ class gac_agent:
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
         r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
         if self.args.cuda:
-            inputs_norm_tensor = inputs_norm_tensor.cuda()
-            inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
-            actions_tensor = actions_tensor.cuda()
-            r_tensor = r_tensor.cuda()
+            inputs_norm_tensor = inputs_norm_tensor.cuda(self.device)
+            inputs_next_norm_tensor = inputs_next_norm_tensor.cuda(self.device)
+            actions_tensor = actions_tensor.cuda(self.device)
+            r_tensor = r_tensor.cuda(self.device)
         # calculate the target Q value function
         with torch.no_grad():
             # do the normalization
