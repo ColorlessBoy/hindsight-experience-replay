@@ -5,7 +5,7 @@ import numpy as np
 from mpi4py import MPI
 from mpi_utils.mpi_utils import sync_networks, sync_grads
 from rl_modules.replay_buffer import replay_buffer
-from rl_modules.gac_models import actor, critic
+from rl_modules.gac_models import actor, critic, mmd
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 
@@ -75,6 +75,7 @@ class gac_agent:
         """
         # start to collect samples
         for epoch in range(self.args.n_epochs):
+            actor_loss, critic_loss, mmd_entropy = .0, .0, .0
             for _ in range(self.args.n_cycles):
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
                 for _ in range(self.args.num_rollouts_per_mpi):
@@ -119,7 +120,7 @@ class gac_agent:
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
-                    self._update_network()
+                    actor_loss, critic_loss, mmd_entropy = self._update_network()
                 # soft update
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
@@ -128,6 +129,7 @@ class gac_agent:
             success_rate = self._eval_agent()
             if self.rank == 0:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
+                print('\t actor loss is: {}, critic loss is: {}, mmd_entropy is: {}.'.format(actor_loss, critic_loss, mmd_entropy))
                 torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
                             self.model_path + '/model.pt')
 
@@ -216,6 +218,7 @@ class gac_agent:
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda(self.device)
             actions_tensor = actions_tensor.cuda(self.device)
             r_tensor = r_tensor.cuda(self.device)
+
         # calculate the target Q value function
         with torch.no_grad():
             # do the normalization
@@ -233,10 +236,27 @@ class gac_agent:
         real_q_value2 = self.critic_network2(inputs_norm_tensor, actions_tensor)
         critic_loss1 = (target_q_value - real_q_value1).pow(2).mean()
         critic_loss2 = (target_q_value - real_q_value2).pow(2).mean()
+
         # the actor loss
-        actions_real = self.actor_network(inputs_norm_tensor)
-        actor_loss = -torch.min(self.critic_network1(inputs_norm_tensor, actions_real),
-                    self.critic_network2(inputs_norm_tensor, actions_real)).mean()
+        exp_inputs_norm_tensor = inputs_norm_tensor.repeat(self.args.expand_batch, 1)
+        exp_actions_real = self.actor_network(exp_inputs_norm_tensor)
+        actor_loss = -torch.min(self.critic_network1(exp_inputs_norm_tensor, exp_actions_real),
+                    self.critic_network2(exp_inputs_norm_tensor, exp_actions_real)).mean()
+
+        mmd_entropy = 0.0
+
+        if self.args.mmd:
+            # mmd is computationally expensive
+            exp_actions_real2 = exp_actions_real.view(self.args.expand_batch, -1, 
+                                            exp_actions_real.shape[-1]).transpose(0, 1)
+            with torch.no_grad():
+                uniform_actions = (2 * torch.rand_like(exp_actions_real2) - 1)
+            mmd_entropy = mmd(exp_actions_real2, uniform_actions)
+            if self.args.beta_mmd <= 0.0:
+                mmd_entropy.detach_()
+            else:
+                actor_loss += self.args.beta_mmd * mmd_entropy
+
         # actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         # start to update the network
         self.actor_optim.zero_grad()
@@ -253,6 +273,10 @@ class gac_agent:
         sync_grads(self.critic_network2)
         self.critic_optim2.step()
 
+        return actor_loss.detach().cpu().numpy(), \
+               critic_loss1.detach().cpu().numpy(),\
+               mmd_entropy.detach().cpu().numpy()
+
     # do the evaluation
     def _eval_agent(self):
         total_success_rate = []
@@ -264,7 +288,7 @@ class gac_agent:
             for _ in range(self.env_params['max_timesteps']):
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
-                    pi = self.actor_network(input_tensor)
+                    pi = self.actor_network(input_tensor, std=0.5)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
                 observation_new, _, _, info = self.env.step(actions)

@@ -35,6 +35,9 @@ def get_args():
     parser.add_argument('--demo-length', type=int, default=20, help='the demo length')
     parser.add_argument('--cuda', action='store_true', help='if use gpu do the acceleration')
     parser.add_argument('--num-rollouts-per-mpi', type=int, default=2, help='the rollouts per mpi')
+    parser.add_argument('--mmd', action='store_true', help='if use mmd entropy in gac')
+    parser.add_argument('--expand-batch', type=int, default=100, help='batch of actions for mmd')
+    parser.add_argument('--beta-mmd', type=float, default=0.1, help='hyper_parameter of mmd_entropy')
 
     args = parser.parse_args()
 
