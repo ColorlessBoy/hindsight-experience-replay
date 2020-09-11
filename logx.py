@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import os.path as osp, time, atexit, os
 import warnings
-from mpi_utils.mpi_utils import mpi_statistics_scalar, proc_id
+from mpi4py import MPI
 
 color2num = dict(
     gray=30,
@@ -99,7 +99,7 @@ class Logger:
                 hyperparameter configuration with multiple random seeds, you
                 should give them all the same ``exp_name``.)
         """
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             self.output_dir = output_dir or "/tmp/experiments/%i"%int(time.time())
             if osp.exists(self.output_dir):
                 print("Warning: Log dir %s already exists! Storing info there anyway."%self.output_dir)
@@ -118,7 +118,7 @@ class Logger:
 
     def log(self, msg, color='green'):
         """Print a colorized message to stdout."""
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             print(colorize(msg, color, bold=True))
 
     def log_tabular(self, key, val):
@@ -156,7 +156,7 @@ class Logger:
         config_json = convert_json(config)
         if self.exp_name is not None:
             config_json['exp_name'] = self.exp_name
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             output = json.dumps(config_json, separators=(',',':\t'), indent=4, sort_keys=True)
             print(colorize('Saving config:\n', color='cyan', bold=True))
             print(output)
@@ -184,7 +184,7 @@ class Logger:
 
             itr: An int, or None. Current iteration of training.
         """
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             fname = 'vars.pkl' if itr is None else 'vars%d.pkl'%itr
            #try:
            #    joblib.dump(state_dict, osp.join(self.output_dir, fname))
@@ -214,7 +214,7 @@ class Logger:
         """
         Saves the PyTorch model (or models).
         """
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             assert hasattr(self, 'pytorch_saver_elements'), \
                 "First have to setup saving with self.setup_pytorch_saver"
             fpath = 'pyt_save'
@@ -230,7 +230,7 @@ class Logger:
 
         Writes both to stdout, and to the output file.
         """
-        if proc_id()==0:
+        if MPI.COMM_WORLD.Get_rank()==0:
             vals = []
             key_lens = [len(key) for key in self.log_headers]
             max_key_len = max(15,max(key_lens))
@@ -293,7 +293,7 @@ class EpochLogger(Logger):
                 self.epoch_dict[k] = []
             self.epoch_dict[k].append(v)
 
-    def log_tabular(self, key, val=None, with_min_and_max=False, average_only=False):
+    def log_tabular(self, key, val=None):
         """
         Log a value or possibly the mean/std/min/max values of a diagnostic.
 
@@ -306,30 +306,14 @@ class EpochLogger(Logger):
                 values for this key via ``store``, do *not* provide a ``val``
                 here.
 
-            with_min_and_max (bool): If true, log min and max values of the 
-                diagnostic over the epoch.
-
-            average_only (bool): If true, do not log the standard deviation
-                of the diagnostic over the epoch.
         """
         if val is not None:
             super().log_tabular(key,val)
         else:
             v = self.epoch_dict[key]
             vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
-            stats = mpi_statistics_scalar(vals, with_min_and_max=with_min_and_max)
-            super().log_tabular(key if average_only else 'Average' + key, stats[0])
-            if not(average_only):
-                super().log_tabular('Std'+key, stats[1])
-            if with_min_and_max:
-                super().log_tabular('Max'+key, stats[3])
-                super().log_tabular('Min'+key, stats[2])
+            vals_mean = np.mean(vals)
+            global_vals_sum = MPI.COMM_WORLD.allreduce(vals_mean, op=MPI.SUM)
+            global_vals_mean = global_vals_sum / MPI.COMM_WORLD.Get_size()
+            super().log_tabular('Average'+key, global_vals_mean)
         self.epoch_dict[key] = []
-
-    def get_stats(self, key):
-        """
-        Lets an algorithm ask the logger for mean/std/min/max of a diagnostic.
-        """
-        v = self.epoch_dict[key]
-        vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
-        return mpi_statistics_scalar(vals)

@@ -132,26 +132,25 @@ class gac_agent:
                 self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
             success_rate = self._eval_agent()
-            self.logger.store(SuccessRate=success_rate)
-            if self.rank == 0:
-                # save some necessary objects
-                # do not save the replay buffer
-                # self.logger.save_state will also save pytorch's model implicitly.
-                # self.logger.save_state({'env':self.env, 'o_norm':self.o_norm, 'g_norm':self.g_norm}, None)
-                state = {'env':self.env, 'o_norm':self.o_norm.get(), 'g_norm':self.g_norm.get()}
-                self.logger.save_state(state, None)
-                t = ((epoch+1) * self.args.n_cycles * 
-                     self.args.num_rollouts_per_mpi * 
-                     MPI.COMM_WORLD.Get_size() * 
-                     self.env_params['max_timesteps'])
 
-                self.logger.log_tabular('Epoch', epoch+1)
-                self.logger.log_tabular('SuccessRate', average_only=True)
-                self.logger.log_tabular('LossPi', average_only=True)
-                self.logger.log_tabular('LossQ', average_only=True)
-                self.logger.log_tabular('MMDEntropy', average_only=True)
-                self.logger.log_tabular('TotalEnvInteracts', t)
-                self.logger.dump_tabular()
+            # save some necessary objects
+            # self.logger.save_state will also save pytorch's model implicitly.
+            # self.logger.save_state({'env':self.env, 'o_norm':self.o_norm, 'g_norm':self.g_norm}, None)
+            state = {'env':self.env, 'o_norm':self.o_norm.get(), 'g_norm':self.g_norm.get()}
+            self.logger.save_state(state, None)
+
+            t = ((epoch+1) * self.args.n_cycles * 
+                    self.args.num_rollouts_per_mpi * 
+                    MPI.COMM_WORLD.Get_size() * 
+                    self.env_params['max_timesteps'])
+
+            self.logger.log_tabular('Epoch', epoch+1)
+            self.logger.log_tabular('SuccessRate')
+            self.logger.log_tabular('LossPi')
+            self.logger.log_tabular('LossQ')
+            self.logger.log_tabular('MMDEntropy')
+            self.logger.log_tabular('TotalEnvInteracts', t)
+            self.logger.dump_tabular()
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
@@ -319,4 +318,4 @@ class gac_agent:
         total_success_rate = np.array(total_success_rate)
         local_success_rate = np.mean(total_success_rate[:, -1])
         global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
-        return global_success_rate / MPI.COMM_WORLD.Get_size()
+        self.logger.store(SuccessRate=global_success_rate)
