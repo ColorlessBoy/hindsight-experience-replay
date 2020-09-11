@@ -145,7 +145,7 @@ class gac_agent:
                     self.env_params['max_timesteps'])
 
             self.logger.log_tabular('Epoch', epoch+1)
-            self.logger.log_tabular('SuccessRate')
+            self.logger.log_tabular('SuccessRate', success_rate)
             self.logger.log_tabular('LossPi')
             self.logger.log_tabular('LossQ')
             self.logger.log_tabular('MMDEntropy')
@@ -318,4 +318,4 @@ class gac_agent:
         total_success_rate = np.array(total_success_rate)
         local_success_rate = np.mean(total_success_rate[:, -1])
         global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
-        self.logger.store(SuccessRate=global_success_rate)
+        return global_success_rate / MPI.COMM_WORLD.Get_size()
