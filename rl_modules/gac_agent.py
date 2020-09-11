@@ -212,7 +212,7 @@ class gac_agent:
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
-        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
+        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) * self.args.reward_scale
         if self.args.cuda:
             inputs_norm_tensor = inputs_norm_tensor.cuda(self.device)
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda(self.device)
@@ -243,7 +243,7 @@ class gac_agent:
         actor_loss = -torch.min(self.critic_network1(exp_inputs_norm_tensor, exp_actions_real),
                     self.critic_network2(exp_inputs_norm_tensor, exp_actions_real)).mean()
 
-        mmd_entropy = 0.0
+        mmd_entropy = torch.tensor(0.0)
 
         if self.args.mmd:
             # mmd is computationally expensive

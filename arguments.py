@@ -38,6 +38,7 @@ def get_args():
     parser.add_argument('--mmd', action='store_true', help='if use mmd entropy in gac')
     parser.add_argument('--expand-batch', type=int, default=100, help='batch of actions for mmd')
     parser.add_argument('--beta-mmd', type=float, default=0.1, help='hyper_parameter of mmd_entropy')
+    parser.add_argument('--reward-scale', type=float, default=1.0, help='true-reward = original-reward * reward-scale')
 
     args = parser.parse_args()
 
