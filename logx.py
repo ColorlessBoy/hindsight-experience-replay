@@ -313,7 +313,8 @@ class EpochLogger(Logger):
             v = self.epoch_dict[key]
             vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
             vals_mean = np.mean(vals)
-            global_vals_sum = MPI.COMM_WORLD.allreduce(vals_mean, op=MPI.SUM)
-            global_vals_mean = global_vals_sum / MPI.COMM_WORLD.Get_size()
-            super().log_tabular('Average'+key, global_vals_mean)
+#           global_vals_sum = MPI.COMM_WORLD.allreduce(vals_mean, op=MPI.SUM)
+#           global_vals_mean = global_vals_sum / MPI.COMM_WORLD.Get_size()
+#           communication is too expensive.
+            super().log_tabular('Average'+key, vals_mean)
         self.epoch_dict[key] = []
