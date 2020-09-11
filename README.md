@@ -10,6 +10,7 @@ This is a pytorch implementation of [Hindsight Experience Replay](https://arxiv.
 - mujoco-py=1.50.1.56 (~~**Please use this version, if you use mujoco200, you may failed in the FetchSlide-v1**~~)
 - pytorch=1.0.0 (**If you use pytorch-0.4.1, you may have data type errors. I will fix it later.**)
 - mpi4py
+- joblib
 
 ## TODO List
 - [x] support GPU acceleration - although I have added GPU support, but I still not recommend if you don't have a powerful machine.

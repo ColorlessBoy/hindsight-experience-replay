@@ -9,6 +9,8 @@ from rl_modules.gac_models import actor, critic, mmd
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 
+from logx import EpochLogger
+
 """
 gac with HER (MPI-version)
 
@@ -16,6 +18,16 @@ gac with HER (MPI-version)
 class gac_agent:
     def __init__(self, args, env, env_params):
         self.args = args
+
+        # path to save the model
+        self.exp_name = '_'.join((self.args.env_name, self.args.alg, 
+                    str(self.args.seed), datetime.now().isoformat()))
+        self.data_path = os.path.join(self.args.save_dir, 
+                '_'.join((self.args.env_name, self.args.alg)),
+                self.exp_name)
+        self.logger = EpochLogger(output_dir=self.data_path, exp_name=self.exp_name)
+        self.logger.save_config(args)
+
         self.env = env
         self.env_params = env_params
         # create the network
@@ -59,14 +71,8 @@ class gac_agent:
         # create the normalizer
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
-        # create the dict for store the model
-        if self.rank == 0:
-            if not os.path.exists(self.args.save_dir):
-                os.mkdir(self.args.save_dir)
-            # path to save the model
-            self.model_path = os.path.join(self.args.save_dir, self.args.env_name)
-            if not os.path.exists(self.model_path):
-                os.mkdir(self.model_path)
+
+        self.logger.setup_pytorch_saver(self.actor_network)
 
     def learn(self):
         """
@@ -75,7 +81,6 @@ class gac_agent:
         """
         # start to collect samples
         for epoch in range(self.args.n_epochs):
-            actor_loss, critic_loss, mmd_entropy = .0, .0, .0
             for _ in range(self.args.n_cycles):
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
                 for _ in range(self.args.num_rollouts_per_mpi):
@@ -120,18 +125,33 @@ class gac_agent:
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
-                    actor_loss, critic_loss, mmd_entropy = self._update_network()
+                    self._update_network()
                 # soft update
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
                 self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
             success_rate = self._eval_agent()
+            self.logger.store(SuccessRate=success_rate)
             if self.rank == 0:
-                print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
-                print('\t actor loss is: {}, critic loss is: {}, mmd_entropy is: {}.'.format(actor_loss, critic_loss, mmd_entropy))
-                torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
-                            self.model_path + '/model.pt')
+                # save some necessary objects
+                # do not save the replay buffer
+                # self.logger.save_state will also save pytorch's model implicitly.
+                # self.logger.save_state({'env':self.env, 'o_norm':self.o_norm, 'g_norm':self.g_norm}, None)
+                state = {'env':self.env, 'o_norm':self.o_norm.get(), 'g_norm':self.g_norm.get()}
+                self.logger.save_state(state, None)
+                t = ((epoch+1) * self.args.n_cycles * 
+                     self.args.num_rollouts_per_mpi * 
+                     MPI.COMM_WORLD.Get_size() * 
+                     self.env_params['max_timesteps'])
+
+                self.logger.log_tabular('Epoch', epoch+1)
+                self.logger.log_tabular('SuccessRate', average_only=True)
+                self.logger.log_tabular('LossPi', average_only=True)
+                self.logger.log_tabular('LossQ', average_only=True)
+                self.logger.log_tabular('MMDEntropy', average_only=True)
+                self.logger.log_tabular('TotalEnvInteracts', t)
+                self.logger.dump_tabular()
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
@@ -273,9 +293,9 @@ class gac_agent:
         sync_grads(self.critic_network2)
         self.critic_optim2.step()
 
-        return actor_loss.detach().cpu().numpy(), \
-               critic_loss1.detach().cpu().numpy(),\
-               mmd_entropy.detach().cpu().numpy()
+        self.logger.store(LossPi=actor_loss.detach().cpu().numpy())
+        self.logger.store(LossQ=(critic_loss1+critic_loss2).detach().cpu().numpy())
+        self.logger.store(MMDEntropy=mmd_entropy.detach().cpu().numpy())
 
     # do the evaluation
     def _eval_agent(self):
