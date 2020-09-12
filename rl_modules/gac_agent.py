@@ -39,11 +39,11 @@ class gac_agent:
         sync_networks(self.critic_network1)
         sync_networks(self.critic_network2)
         # build up the target network
-        self.actor_target_network = actor(env_params)
+        # self.actor_target_network = actor(env_params)
         self.critic_target_network1 = critic(env_params)
         self.critic_target_network2 = critic(env_params)
         # load the weights into the target networks
-        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+        # self.actor_target_network.load_state_dict(self.actor_network.state_dict())
         self.critic_target_network1.load_state_dict(self.critic_network1.state_dict())
         self.critic_target_network2.load_state_dict(self.critic_network2.state_dict())
 
@@ -57,7 +57,7 @@ class gac_agent:
             self.actor_network.cuda(self.device)
             self.critic_network1.cuda(self.device)
             self.critic_network2.cuda(self.device)
-            self.actor_target_network.cuda(self.device)
+            # self.actor_target_network.cuda(self.device)
             self.critic_target_network1.cuda(self.device)
             self.critic_target_network2.cuda(self.device)
         # create the optimizer
@@ -127,7 +127,7 @@ class gac_agent:
                     # train the network
                     self._update_network()
                 # soft update
-                self._soft_update_target_network(self.actor_target_network, self.actor_network)
+                # self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
                 self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
@@ -242,7 +242,7 @@ class gac_agent:
         with torch.no_grad():
             # do the normalization
             # concatenate the stuffs
-            actions_next = self.actor_target_network(inputs_next_norm_tensor)
+            actions_next = self.actor_network(inputs_next_norm_tensor)
             q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next).detach()
             q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next).detach()
             target_q_value = r_tensor + self.args.gamma * torch.min(q_next_value1, q_next_value2)
