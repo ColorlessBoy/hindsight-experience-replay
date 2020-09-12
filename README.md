@@ -10,6 +10,7 @@ This is a pytorch implementation of [Hindsight Experience Replay](https://arxiv.
 - mujoco-py=1.50.1.56 (~~**Please use this version, if you use mujoco200, you may failed in the FetchSlide-v1**~~)
 - pytorch=1.0.0 (**If you use pytorch-0.4.1, you may have data type errors. I will fix it later.**)
 - mpi4py
+- joblib
 
 ## TODO List
 - [x] support GPU acceleration - although I have added GPU support, but I still not recommend if you don't have a powerful machine.
@@ -20,19 +21,19 @@ This is a pytorch implementation of [Hindsight Experience Replay](https://arxiv.
 If you want to use GPU, just add the flag `--cuda` **(Not Recommended, Better Use CPU)**.
 1. train the **FetchReach-v1**:
 ```bash
-mpirun -np 1 python -u train.py --env-name='FetchReach-v1' --n-cycles=10 2>&1 | tee reach.log
+mpirun -np 1 python -u train.py --env-name='FetchReach-v1' --n-cycles=10 --cuda 2>&1 | tee ./logs/reach_ddpg.log
 ```
 2. train the **FetchPush-v1**:
 ```bash
-mpirun -np 8 python -u train.py --env-name='FetchPush-v1' 2>&1 | tee push.log
+mpirun -np 8 python -u train.py --env-name='FetchPush-v1' --cuda 2>&1 | tee ./logs/push_ddpg.log
 ```
 3. train the **FetchPickAndPlace-v1**:
 ```bash
-mpirun -np 16 python -u train.py --env-name='FetchPickAndPlace-v1' 2>&1 | tee pick.log
+mpirun -np 16 python -u train.py --env-name='FetchPickAndPlace-v1' --cuda 2>&1 | tee ./logs/pick_ddpg.log
 ```
 4. train the **FetchSlide-v1**:
 ```bash
-mpirun -np 8 python -u train.py --env-name='FetchSlide-v1' --n-epochs=200 2>&1 | tee slide.log
+mpirun -np 8 python -u train.py --env-name='FetchSlide-v1' --n-epochs=200 --cuda 2>&1 | tee ./logs/slide_ddpg.log
 ```
 
 ### Play Demo

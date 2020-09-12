@@ -8,6 +8,7 @@ Here are the param for the training
 def get_args():
     parser = argparse.ArgumentParser()
     # the environment setting
+    parser.add_argument('--alg', type=str, default='ddpg', help='the algorithm name')
     parser.add_argument('--env-name', type=str, default='FetchReach-v1', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=50, help='the number of epochs to train the agent')
     parser.add_argument('--n-cycles', type=int, default=50, help='the times to collect samples per epoch')
@@ -17,7 +18,7 @@ def get_args():
     parser.add_argument('--num-workers', type=int, default=1, help='the number of cpus to collect samples')
     parser.add_argument('--replay-strategy', type=str, default='future', help='the HER strategy')
     parser.add_argument('--clip-return', type=float, default=50, help='if clip the returns')
-    parser.add_argument('--save-dir', type=str, default='saved_models/', help='the path to save the models')
+    parser.add_argument('--save-dir', type=str, default='data/', help='the path to save the data')
     parser.add_argument('--noise-eps', type=float, default=0.2, help='noise eps')
     parser.add_argument('--random-eps', type=float, default=0.3, help='random eps')
     parser.add_argument('--buffer-size', type=int, default=int(1e6), help='the size of the buffer')
@@ -34,6 +35,11 @@ def get_args():
     parser.add_argument('--demo-length', type=int, default=20, help='the demo length')
     parser.add_argument('--cuda', action='store_true', help='if use gpu do the acceleration')
     parser.add_argument('--num-rollouts-per-mpi', type=int, default=2, help='the rollouts per mpi')
+    parser.add_argument('--mmd', action='store_true', help='if use mmd entropy in gac')
+    parser.add_argument('--expand-batch', type=int, default=100, help='batch of actions for mmd')
+    parser.add_argument('--beta-mmd', type=float, default=0.1, help='hyper_parameter of mmd_entropy')
+    parser.add_argument('--reward-scale', type=float, default=1.0, help='true-reward = original-reward * reward-scale')
+    parser.add_argument('--alpha', type=float, default=0.2, help='hyperparameter of entropy in sac')
 
     args = parser.parse_args()
 

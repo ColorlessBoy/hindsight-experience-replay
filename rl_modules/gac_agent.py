@@ -5,17 +5,17 @@ import numpy as np
 from mpi4py import MPI
 from mpi_utils.mpi_utils import sync_networks, sync_grads
 from rl_modules.replay_buffer import replay_buffer
-from rl_modules.models import actor, critic
+from rl_modules.gac_models import actor, critic, mmd
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 
 from logx import EpochLogger
 
 """
-ddpg with HER (MPI-version)
+gac with HER (MPI-version)
 
 """
-class ddpg_agent:
+class gac_agent:
     def __init__(self, args, env, env_params):
         self.args = args
 
@@ -32,33 +32,38 @@ class ddpg_agent:
         self.env_params = env_params
         # create the network
         self.actor_network = actor(env_params)
-        self.critic_network = critic(env_params)
+        self.critic_network1 = critic(env_params)
+        self.critic_network2 = critic(env_params)
         # sync the networks across the cpus
         sync_networks(self.actor_network)
-        sync_networks(self.critic_network)
+        sync_networks(self.critic_network1)
+        sync_networks(self.critic_network2)
         # build up the target network
         self.actor_target_network = actor(env_params)
-        self.critic_target_network = critic(env_params)
+        self.critic_target_network1 = critic(env_params)
+        self.critic_target_network2 = critic(env_params)
         # load the weights into the target networks
         self.actor_target_network.load_state_dict(self.actor_network.state_dict())
-        self.critic_target_network.load_state_dict(self.critic_network.state_dict())
+        self.critic_target_network1.load_state_dict(self.critic_network1.state_dict())
+        self.critic_target_network2.load_state_dict(self.critic_network2.state_dict())
 
         # if use gpu
         self.rank = MPI.COMM_WORLD.Get_rank()
         if args.cuda:
             device = 'cuda:{}'.format(self.rank % torch.cuda.device_count())
-        else:
-            device = 'cpu'
         self.device = torch.device(device)
 
         if self.args.cuda:
             self.actor_network.cuda(self.device)
-            self.critic_network.cuda(self.device)
+            self.critic_network1.cuda(self.device)
+            self.critic_network2.cuda(self.device)
             self.actor_target_network.cuda(self.device)
-            self.critic_target_network.cuda(self.device)
+            self.critic_target_network1.cuda(self.device)
+            self.critic_target_network2.cuda(self.device)
         # create the optimizer
         self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
-        self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=self.args.lr_critic)
+        self.critic_optim1 = torch.optim.Adam(self.critic_network1.parameters(), lr=self.args.lr_critic)
+        self.critic_optim2 = torch.optim.Adam(self.critic_network2.parameters(), lr=self.args.lr_critic)
         # her sampler
         self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k, self.env.compute_reward)
         # create the replay buffer
@@ -123,7 +128,8 @@ class ddpg_agent:
                     self._update_network()
                 # soft update
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
-                self._soft_update_target_network(self.critic_target_network, self.critic_network)
+                self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
+                self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
             success_rate = self._eval_agent()
 
@@ -142,6 +148,7 @@ class ddpg_agent:
             self.logger.log_tabular('SuccessRate', success_rate)
             self.logger.log_tabular('LossPi')
             self.logger.log_tabular('LossQ')
+            self.logger.log_tabular('MMDEntropy')
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
@@ -160,8 +167,8 @@ class ddpg_agent:
     def _select_actions(self, pi):
         action = pi.cpu().numpy().squeeze()
         # add the gaussian
-        action += self.args.noise_eps * self.env_params['action_max'] * np.random.randn(*action.shape)
-        action = np.clip(action, -self.env_params['action_max'], self.env_params['action_max'])
+        # action += self.args.noise_eps * self.env_params['action_max'] * np.random.randn(*action.shape)
+        # action = np.clip(action, -self.env_params['action_max'], self.env_params['action_max'])
         # random actions...
         random_actions = np.random.uniform(low=-self.env_params['action_max'], high=self.env_params['action_max'], \
                                             size=self.env_params['action'])
@@ -224,44 +231,70 @@ class ddpg_agent:
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
-        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
+        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) * self.args.reward_scale
         if self.args.cuda:
             inputs_norm_tensor = inputs_norm_tensor.cuda(self.device)
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda(self.device)
             actions_tensor = actions_tensor.cuda(self.device)
             r_tensor = r_tensor.cuda(self.device)
+
         # calculate the target Q value function
         with torch.no_grad():
             # do the normalization
             # concatenate the stuffs
             actions_next = self.actor_target_network(inputs_next_norm_tensor)
-            q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
-            q_next_value = q_next_value.detach()
-            target_q_value = r_tensor + self.args.gamma * q_next_value
+            q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next).detach()
+            q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next).detach()
+            target_q_value = r_tensor + self.args.gamma * torch.min(q_next_value1, q_next_value2)
             target_q_value = target_q_value.detach()
             # clip the q value
             clip_return = 1 / (1 - self.args.gamma)
             target_q_value = torch.clamp(target_q_value, -clip_return, 0)
         # the q loss
-        real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
-        critic_loss = (target_q_value - real_q_value).pow(2).mean()
+        real_q_value1 = self.critic_network1(inputs_norm_tensor, actions_tensor)
+        real_q_value2 = self.critic_network2(inputs_norm_tensor, actions_tensor)
+        critic_loss1 = (target_q_value - real_q_value1).pow(2).mean()
+        critic_loss2 = (target_q_value - real_q_value2).pow(2).mean()
+
         # the actor loss
-        actions_real = self.actor_network(inputs_norm_tensor)
-        actor_loss = -self.critic_network(inputs_norm_tensor, actions_real).mean()
-        actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+        exp_inputs_norm_tensor = inputs_norm_tensor.repeat(self.args.expand_batch, 1)
+        exp_actions_real = self.actor_network(exp_inputs_norm_tensor)
+        actor_loss = -torch.min(self.critic_network1(exp_inputs_norm_tensor, exp_actions_real),
+                    self.critic_network2(exp_inputs_norm_tensor, exp_actions_real)).mean()
+
+        mmd_entropy = torch.tensor(0.0)
+
+        if self.args.mmd:
+            # mmd is computationally expensive
+            exp_actions_real2 = exp_actions_real.view(self.args.expand_batch, -1, 
+                                            exp_actions_real.shape[-1]).transpose(0, 1)
+            with torch.no_grad():
+                uniform_actions = (2 * torch.rand_like(exp_actions_real2) - 1)
+            mmd_entropy = mmd(exp_actions_real2, uniform_actions)
+            if self.args.beta_mmd <= 0.0:
+                mmd_entropy.detach_()
+            else:
+                actor_loss += self.args.beta_mmd * mmd_entropy
+
+        # actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
         sync_grads(self.actor_network)
         self.actor_optim.step()
         # update the critic_network
-        self.critic_optim.zero_grad()
-        critic_loss.backward()
-        sync_grads(self.critic_network)
-        self.critic_optim.step()
+        self.critic_optim1.zero_grad()
+        critic_loss1.backward()
+        sync_grads(self.critic_network1)
+        self.critic_optim1.step()
+        self.critic_optim2.zero_grad()
+        critic_loss2.backward()
+        sync_grads(self.critic_network2)
+        self.critic_optim2.step()
 
         self.logger.store(LossPi=actor_loss.detach().cpu().numpy())
-        self.logger.store(LossQ=critic_loss.detach().cpu().numpy())
+        self.logger.store(LossQ=(critic_loss1+critic_loss2).detach().cpu().numpy())
+        self.logger.store(MMDEntropy=mmd_entropy.detach().cpu().numpy())
 
     # do the evaluation
     def _eval_agent(self):
@@ -274,7 +307,7 @@ class ddpg_agent:
             for _ in range(self.env_params['max_timesteps']):
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
-                    pi = self.actor_network(input_tensor)
+                    pi = self.actor_network(input_tensor, std=0.5)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
                 observation_new, _, _, info = self.env.step(actions)

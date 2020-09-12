@@ -21,6 +21,7 @@ class normalizer:
         # thread locker
         self.lock = threading.Lock()
     
+    
     # update the parameters of the normalizer
     def update(self, v):
         v = v.reshape(-1, self.size)
@@ -68,3 +69,30 @@ class normalizer:
         if clip_range is None:
             clip_range = self.default_clip_range
         return np.clip((v - self.mean) / (self.std), -clip_range, clip_range)
+
+    def get(self):
+        with self.lock:
+            params = {'size':self.size,
+                    'eps':self.eps,
+                    'default_clip_range':self.default_clip_range,
+                    'local_sum':self.local_sum,
+                    'local_sumsq':self.local_sumsq,
+                    'total_sum':self.total_sum,
+                    'total_sumsq':self.total_sumsq,
+                    'total_count':self.total_count,
+                    'mean':self.mean,
+                    'std':self.std}
+        return params
+
+    def set(self, params):
+        with self.lock:
+            self.size = params['size']
+            self.eps = params['eps']
+            self.default_clip_range = params['default_clip_range']
+            self.local_sum = params['local_sum']
+            self.local_sumsq = params['local_sumsq']
+            self.total_sum = params['total_sum']
+            self.total_sumsq = params['total_sumsq']
+            self.total_count = params['total_count']
+            self.mean = params['mean']
+            self.std = params['std']
