@@ -5,6 +5,7 @@ from arguments import get_args
 from mpi4py import MPI
 from rl_modules.ddpg_agent import ddpg_agent
 from rl_modules.gac_agent import gac_agent
+from rl_modules.sac_agent import sac_agent
 import random
 import torch
 
@@ -38,12 +39,17 @@ def launch(args):
     # create the ddpg_agent
     if args.alg == 'gac':
         # create the ddpg agent to interact with the environment 
-        print("Using the generative policy.")
+        print("Start GAC...")
         gac_trainer = gac_agent(args, env, env_params)
         gac_trainer.learn()
+    elif args.alg == 'sac':
+        # create the ddpg agent to interact with the environment 
+        print("Start SAC...")
+        sac_trainer = sac_agent(args, env, env_params)
+        sac_trainer.learn()
     else:
         # create the ddpg agent to interact with the environment 
-        print("Using the deterministic policy.")
+        print("Start DDPG...")
         ddpg_trainer = ddpg_agent(args, env, env_params)
         ddpg_trainer.learn()
 
