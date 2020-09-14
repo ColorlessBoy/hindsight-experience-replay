@@ -6,6 +6,7 @@ from mpi4py import MPI
 from rl_modules.ddpg_agent import ddpg_agent
 from rl_modules.gac_agent import gac_agent
 from rl_modules.sac_agent import sac_agent
+from rl_modules.td3_agent import td3_agent
 import random
 import torch
 
@@ -47,6 +48,10 @@ def launch(args):
         print("Start SAC...")
         sac_trainer = sac_agent(args, env, env_params)
         sac_trainer.learn()
+    elif args.alg == 'td3':
+        print('Start TD3...')
+        td3_trainer = td3_agent(args, env, env_params)
+        td3_trainer.learn()
     else:
         # create the ddpg agent to interact with the environment 
         print("Start DDPG...")
