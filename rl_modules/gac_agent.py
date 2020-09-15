@@ -20,11 +20,22 @@ class gac_agent:
         self.args = args
 
         # path to save the model
-        self.exp_name = '_'.join((self.args.env_name, self.args.alg, 
-                    str(self.args.seed), datetime.now().isoformat()))
-        self.data_path = os.path.join(self.args.save_dir, 
-                '_'.join((self.args.env_name, self.args.alg)),
-                self.exp_name)
+        if self.args.mmd:
+            self.exp_name = '_'.join((self.args.env_name, self.args.alg, 
+                                    'mmd'+str(self.args.beta_mmd), 
+                                    's'+str(self.args.seed), 
+                                    datetime.now().isoformat()))
+            self.data_path = os.path.join(self.args.save_dir, 
+                                    '_'.join((self.args.env_name, 
+                                            self.args.alg, 
+                                            'mmd'+str(self.args.beta_mmd))),
+                                    self.exp_name)
+        else:
+            self.exp_name = '_'.join((self.args.env_name, self.args.alg, 
+                        str(self.args.seed), datetime.now().isoformat()))
+            self.data_path = os.path.join(self.args.save_dir, 
+                    '_'.join((self.args.env_name, self.args.alg)),
+                    self.exp_name)
         self.logger = EpochLogger(output_dir=self.data_path, exp_name=self.exp_name)
         self.logger.save_config(args)
 
