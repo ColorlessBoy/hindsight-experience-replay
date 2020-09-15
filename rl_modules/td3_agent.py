@@ -246,14 +246,12 @@ class td3_agent:
             actions_next += self.args.noise_eps * self.env_params['action_max'] * torch.randn(actions_next.shape).cuda(self.device)
             actions_next = torch.clamp(actions_next, -self.env_params['action_max'], self.env_params['action_max'])
             q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next)
-            q_next_value1 = q_next_value1.detach()
             q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next)
-            q_next_value2 = q_next_value2.detach()
             target_q_value = r_tensor + self.args.gamma * torch.min(q_next_value1, q_next_value2)
-            target_q_value = target_q_value.detach()
             # clip the q value
             clip_return = 1 / (1 - self.args.gamma)
             target_q_value = torch.clamp(target_q_value, -clip_return, 0)
+            target_q_value = target_q_value.detach()
         # the q loss
         real_q_value1 = self.critic_network1(inputs_norm_tensor, actions_tensor)
         critic_loss1 = (target_q_value - real_q_value1).pow(2).mean()
