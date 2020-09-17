@@ -13,6 +13,8 @@ from rl_modules.models import actor
 from rl_modules.sac_models import actor as actor_sac
 from rl_modules.gac_models import actor as actor_gac
 
+import time
+
 """
     args needs:
         --alg
@@ -34,7 +36,7 @@ class Test:
         self.output_dir = 'data_test'
         self.exp_name = 'test'
         self.logger = EpochLogger(output_dir=self.output_dir, exp_name=self.exp_name)
-        self.env = wrappers.Monitor(self.env, self.video_file, force=True)
+        # self.env = wrappers.Monitor(self.env, self.video_file, force=True)
 
         device = 'cuda' if args.cuda else 'cpu'
         self.device = torch.device(device)
@@ -62,8 +64,8 @@ class Test:
 
     def run(self):
         self._eval_agent()
-        self.logger.log_tabular('SuccessRate', with_min_and_max=True)
-        logger.dump_tabular()
+        self.logger.log_tabular('SuccessRate')
+        self.logger.dump_tabular()
 
     def _preproc_inputs(self, obs, g):
         obs_norm = np.clip((obs-self.obs_mean)/self.obs_std, 
@@ -84,6 +86,9 @@ class Test:
             obs = observation['observation']
             g = observation['desired_goal']
             for _ in range(self.env_params['max_timesteps']):
+                self.env.render()
+                time.sleep(1e-3)
+
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
                     pi = self.actor_network(input_tensor, std=0.5)
@@ -96,9 +101,9 @@ class Test:
                 self.logger.store(SuccessRate=per_success_rate[-1])
 
 if __name__ == '__main__':
-    from pyvirtualdisplay import Display
-    virtual_display = Display(visible=0, size=(1400, 900))
-    virtual_display.start()
+#    from pyvirtualdisplay import Display
+#    virtual_display = Display(visible=0, size=(1400, 900))
+#    virtual_display.start()
 
     args = get_args()
     test = Test(args)
