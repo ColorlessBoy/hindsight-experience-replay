@@ -10,6 +10,7 @@ from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 
 from logx import EpochLogger
+from mpi4py import MPI
 
 """
 gac with HER (MPI-version)
@@ -73,6 +74,18 @@ class sac_agent:
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
 
         self.logger.setup_pytorch_saver(self.actor_network)
+
+        # auto temperature
+        if self.args.alpha < 0.0:
+            # if self.args.alpha < 0.0, 
+            # sac will use auto temperature and init alpha = - self.args.alpha
+            self.alpha = -self.args.alpha
+            self.log_alpha = torch.tensor(np.log(self.alpha), dtype=torch.float32, 
+                            device=device, requires_grad=True)
+            self.target_entropy = -np.prod(env.action_space.shape).astype(np.float32)
+            self.alpha_optim = torch.optim.Adam([self.log_alpha], lr=self.args.lr_actor)
+        else:
+            self.alpha = self.args.alpha
 
     def learn(self):
         """
@@ -264,6 +277,7 @@ class sac_agent:
                     self.critic_network2(inputs_norm_tensor, actions)).mean()
 
         # actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
@@ -282,6 +296,20 @@ class sac_agent:
         self.logger.store(LossPi=actor_loss.detach().cpu().numpy())
         self.logger.store(LossQ=(critic_loss1+critic_loss2).detach().cpu().numpy())
         self.logger.store(Entropy=log_prob_actions.detach().cpu().numpy())
+
+        # auto temperature
+        if self.args.alpha < 0:
+            logalpha_loss = -self.log_alpha * (log_prob_actions.detach() + self.target_entropy)
+            self.alpha_optim.zero_grad()
+            logalpha_loss.backward()
+            comm = MPI.COMM_WORLD
+            local_grad = self.log_alpha.grad.detach().cpu().numpy()
+            global_grads = np.zeros_like(local_grad)
+            comm.Allreduce(local_grad, global_grads, op=MPI.SUM)
+            self.log_alpha.grad = torch.tensor(global_grads, dtype=torch.float32, device=self.device)
+            self.alpha_optim.zero_grad()
+            with torch.no_grad():
+                self.alpha = self.log_alpha.exp()
 
     # do the evaluation
     def _eval_agent(self):

@@ -86,12 +86,16 @@ class Test:
             obs = observation['observation']
             g = observation['desired_goal']
             for _ in range(self.env_params['max_timesteps']):
-                self.env.render()
-                time.sleep(1e-3)
+                if self.args.render:
+                    self.env.render()
+                    time.sleep(1e-3)
 
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
-                    pi = self.actor_network(input_tensor, std=0.5)
+                    if self.args.alg == 'sac':
+                        pi = self.actor_network(input_tensor, std=0.5)
+                    else:
+                        pi = self.actor_network(input_tensor)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
                 observation_new, _, _, info = self.env.step(actions)
