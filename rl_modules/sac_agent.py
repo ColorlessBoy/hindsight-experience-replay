@@ -162,6 +162,7 @@ class sac_agent:
             self.logger.log_tabular('LossPi')
             self.logger.log_tabular('LossQ')
             self.logger.log_tabular('Entropy')
+            self.logger.log_tabular('alpha')
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
@@ -259,7 +260,7 @@ class sac_agent:
             q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next).detach()
             q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next).detach()
             target_q_value = r_tensor + self.args.gamma * (torch.min(q_next_value1, q_next_value2) 
-                                        - self.args.alpha * log_prob_actions_next)
+                                        - self.alpha * log_prob_actions_next)
             target_q_value = target_q_value.detach()
             # clip the q value
             clip_return = 1 / (1 - self.args.gamma)
@@ -273,7 +274,7 @@ class sac_agent:
         # the actor loss
         actions, log_prob_actions = self.actor_network(inputs_norm_tensor)
         log_prob_actions = log_prob_actions.mean()
-        actor_loss = self.args.alpha * log_prob_actions - torch.min(self.critic_network1(inputs_norm_tensor, actions),
+        actor_loss = self.alpha * log_prob_actions - torch.min(self.critic_network1(inputs_norm_tensor, actions),
                     self.critic_network2(inputs_norm_tensor, actions)).mean()
 
         # actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
@@ -299,17 +300,22 @@ class sac_agent:
 
         # auto temperature
         if self.args.alpha < 0:
-            logalpha_loss = -self.log_alpha * (log_prob_actions.detach() + self.target_entropy)
+
+            comm = MPI.COMM_WORLD
+            log_prob_actions = log_prob_actions.detach().cpu().numpy()
+            global_log_prob_actions = np.zeros_like(log_prob_actions)
+            comm.Allreduce(log_prob_actions, global_log_prob_actions, op=MPI.SUM)
+            global_log_prob_actions /= MPI.COMM_WORLD.Get_size()
+
+            logalpha_loss = -self.log_alpha * (log_prob_actions + self.target_entropy)
+
             self.alpha_optim.zero_grad()
             logalpha_loss.backward()
-            comm = MPI.COMM_WORLD
-            local_grad = self.log_alpha.grad.detach().cpu().numpy()
-            global_grads = np.zeros_like(local_grad)
-            comm.Allreduce(local_grad, global_grads, op=MPI.SUM)
-            self.log_alpha.grad = torch.tensor(global_grads, dtype=torch.float32, device=self.device)
-            self.alpha_optim.zero_grad()
+            self.alpha_optim.step()
             with torch.no_grad():
-                self.alpha = self.log_alpha.exp()
+                self.alpha = self.log_alpha.exp().detach()
+
+        self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
     # do the evaluation
     def _eval_agent(self):
