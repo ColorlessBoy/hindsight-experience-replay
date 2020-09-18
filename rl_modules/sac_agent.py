@@ -302,17 +302,22 @@ class sac_agent:
 
         # auto temperature
         if self.args.alpha < 0:
-            logalpha_loss = -self.log_alpha * (log_prob_actions.detach() + self.target_entropy)
+
+            comm = MPI.COMM_WORLD
+            log_prob_actions = log_prob_actions.detach().cpu().numpy()
+            global_log_prob_actions = np.zeros_like(log_prob_actions)
+            comm.Allreduce(log_prob_actions, global_log_prob_actions, op=MPI.SUM)
+            global_log_prob_actions /= MPI.COMM_WORLD.Get_size()
+
+            logalpha_loss = -self.log_alpha * (log_prob_actions + self.target_entropy)
+
             self.alpha_optim.zero_grad()
             logalpha_loss.backward()
-            comm = MPI.COMM_WORLD
-            local_grad = self.log_alpha.grad.detach().cpu().numpy()
-            global_grads = np.zeros_like(local_grad)
-            comm.Allreduce(local_grad, global_grads, op=MPI.SUM)
-            self.log_alpha.grad = torch.tensor(global_grads, dtype=torch.float32, device=self.device)
-            self.alpha_optim.zero_grad()
+            self.alpha_optim.step()
             with torch.no_grad():
-                self.alpha = self.log_alpha.exp()
+                self.alpha = self.log_alpha.exp().detach()
+
+        self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
         self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
