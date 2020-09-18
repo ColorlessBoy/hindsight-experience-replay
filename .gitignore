@@ -116,6 +116,7 @@ venv.bak/
 
 #data directory
 data/
+data_test/
 
 #logs directory
 logs/
