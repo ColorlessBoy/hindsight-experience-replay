@@ -186,7 +186,7 @@ class sac_agent:
         # random_actions = np.random.uniform(low=-self.env_params['action_max'], high=self.env_params['action_max'], \
         #                                     size=self.env_params['action'])
         # choose if use the random actions
-        action += np.random.binomial(1, self.args.random_eps, 1)[0] * (random_actions - action)
+        # action += np.random.binomial(1, self.args.random_eps, 1)[0] * (random_actions - action)
         return action
 
     # update the normalizer
