@@ -39,7 +39,7 @@ def get_args():
     parser.add_argument('--expand-batch', type=int, default=100, help='batch of actions for mmd')
     parser.add_argument('--beta-mmd', type=float, default=0.1, help='hyper_parameter of mmd_entropy')
     parser.add_argument('--reward-scale', type=float, default=1.0, help='true-reward = original-reward * reward-scale')
-    parser.add_argument('--alpha', type=float, default=0.2, help='hyperparameter of entropy in sac')
+    parser.add_argument('--alpha', type=float, default=0.02, help='hyperparameter of entropy in sac')
     parser.add_argument('--load-fold', type=str, default='tmp', help='load data and model from this fold')
     parser.add_argument('--render', action='store_true', help='enable env.render()')
 

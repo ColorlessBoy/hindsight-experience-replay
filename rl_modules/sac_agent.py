@@ -62,7 +62,7 @@ class sac_agent:
             self.critic_target_network1.cuda(self.device)
             self.critic_target_network2.cuda(self.device)
         # create the optimizer
-        self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
+        self.actor_optim   = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
         self.critic_optim1 = torch.optim.Adam(self.critic_network1.parameters(), lr=self.args.lr_critic)
         self.critic_optim2 = torch.optim.Adam(self.critic_network2.parameters(), lr=self.args.lr_critic)
         # her sampler
@@ -186,10 +186,10 @@ class sac_agent:
         # action += self.args.noise_eps * self.env_params['action_max'] * np.random.randn(*action.shape)
         # action = np.clip(action, -self.env_params['action_max'], self.env_params['action_max'])
         # random actions...
-        # random_actions = np.random.uniform(low=-self.env_params['action_max'], high=self.env_params['action_max'], \
-        #                                     size=self.env_params['action'])
+        random_actions = np.random.uniform(low=-self.env_params['action_max'], high=self.env_params['action_max'], \
+                                            size=self.env_params['action'])
         # choose if use the random actions
-        # action += np.random.binomial(1, self.args.random_eps, 1)[0] * (random_actions - action)
+        action += np.random.binomial(1, self.args.random_eps, 1)[0] * (random_actions - action)
         return action
 
     # update the normalizer
@@ -298,7 +298,7 @@ class sac_agent:
 
         self.logger.store(LossPi=actor_loss.detach().cpu().numpy())
         self.logger.store(LossQ=(critic_loss1+critic_loss2).detach().cpu().numpy())
-        self.logger.store(Entropy=log_prob_actions.detach().cpu().numpy())
+        self.logger.store(Entropy=-log_prob_actions.detach().cpu().numpy())
 
         # auto temperature
         if self.args.alpha < 0:
@@ -316,8 +316,6 @@ class sac_agent:
             self.alpha_optim.step()
             with torch.no_grad():
                 self.alpha = self.log_alpha.exp().detach()
-
-        self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
         self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
