@@ -83,9 +83,11 @@ class sac_agent:
             self.log_alpha = torch.tensor(np.log(self.alpha), dtype=torch.float32, 
                             device=device, requires_grad=True)
             self.target_entropy = -np.prod(env.action_space.shape).astype(np.float32)
+            self.target_entropy = self.target_entropy / 2.0
             self.alpha_optim = torch.optim.Adam([self.log_alpha], lr=self.args.lr_actor)
         else:
             self.alpha = self.args.alpha
+        self.alpha = torch.tensor(self.alpha)
 
     def learn(self):
         """
@@ -162,6 +164,7 @@ class sac_agent:
             self.logger.log_tabular('LossPi')
             self.logger.log_tabular('LossQ')
             self.logger.log_tabular('Entropy')
+            self.logger.log_tabular('alpha')
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
@@ -259,7 +262,7 @@ class sac_agent:
             q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next).detach()
             q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next).detach()
             target_q_value = r_tensor + self.args.gamma * (torch.min(q_next_value1, q_next_value2) 
-                                        - self.args.alpha * log_prob_actions_next)
+                                        - self.alpha * log_prob_actions_next)
             target_q_value = target_q_value.detach()
             # clip the q value
             clip_return = 1 / (1 - self.args.gamma)
@@ -273,7 +276,7 @@ class sac_agent:
         # the actor loss
         actions, log_prob_actions = self.actor_network(inputs_norm_tensor)
         log_prob_actions = log_prob_actions.mean()
-        actor_loss = self.args.alpha * log_prob_actions - torch.min(self.critic_network1(inputs_norm_tensor, actions),
+        actor_loss = self.alpha * log_prob_actions - torch.min(self.critic_network1(inputs_norm_tensor, actions),
                     self.critic_network2(inputs_norm_tensor, actions)).mean()
 
         # actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
@@ -310,6 +313,8 @@ class sac_agent:
             self.alpha_optim.zero_grad()
             with torch.no_grad():
                 self.alpha = self.log_alpha.exp()
+
+        self.logger.store(alpha=self.alpha.detach().cpu().numpy())
 
     # do the evaluation
     def _eval_agent(self):
