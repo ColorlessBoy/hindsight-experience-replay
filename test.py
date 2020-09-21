@@ -92,8 +92,10 @@ class Test:
 
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
-                    if self.args.alg == 'sac':
+                    if self.args.alg == 'gac':
                         pi = self.actor_network(input_tensor, std=0.5)
+                    elif self.args.alg == 'sac':
+                        pi, _ = self.actor_network(input_tensor)
                     else:
                         pi = self.actor_network(input_tensor)
                     # convert the actions
