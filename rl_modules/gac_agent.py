@@ -109,9 +109,9 @@ class gac_agent:
                             pi = self.actor_network(input_tensor)
                             action = self._select_actions(pi)
                         # feed the actions into the environment
-                        observation_new, r, d, info = self.env.step(action)
+                        observation_new, _, _, info = self.env.step(action)
 
-                        ep_reward += r
+                        ep_reward += info.get('goal_met', 0.0)
                         if 'cost' in info.keys():
                             ep_cost += info['cost']
 
@@ -331,8 +331,8 @@ class gac_agent:
                     pi = self.actor_network(input_tensor, std=0.5)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
-                observation_new, r, _, info = self.env.step(actions)
-                ep_reward += r
+                observation_new, _, _, info = self.env.step(actions)
+                ep_reward += info.get('goal_met', 0.0)
                 if 'cost' in info.keys():
                     ep_cost += info['cost']
                 obs = observation_new['observation']
