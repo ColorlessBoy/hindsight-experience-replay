@@ -267,7 +267,8 @@ class gac_agent:
             actions_next = self.actor_network(inputs_next_norm_tensor)
             q_next_value1 = self.critic_target_network1(inputs_next_norm_tensor, actions_next).detach()
             q_next_value2 = self.critic_target_network2(inputs_next_norm_tensor, actions_next).detach()
-            target_q_value = r_tensor + self.args.gamma * torch.min(q_next_value1, q_next_value2)
+            # r = 0, done = True
+            target_q_value = r_tensor + (1 + r_tensor) * self.args.gamma * torch.min(q_next_value1, q_next_value2)
             target_q_value = target_q_value.detach()
             # clip the q value
             clip_return = 1 / (1 - self.args.gamma)
