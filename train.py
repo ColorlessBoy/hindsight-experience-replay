@@ -1,5 +1,6 @@
 import numpy as np
 import gym
+import safety_gym
 import os, sys
 from arguments import get_args
 from mpi4py import MPI

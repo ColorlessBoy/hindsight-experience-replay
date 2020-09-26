@@ -82,7 +82,7 @@ class ddpg_agent:
                     # reset the rollouts
                     ep_obs, ep_ag, ep_g, ep_actions = [], [], [], []
                     # reset the environment
-                    observation = self.env.reset()
+                    observation, ep_reward, ep_cost = self.env.reset(), 0.0, 0.0
                     obs = observation['observation']
                     ag = observation['achieved_goal']
                     g = observation['desired_goal']
@@ -93,7 +93,12 @@ class ddpg_agent:
                             pi = self.actor_network(input_tensor)
                             action = self._select_actions(pi)
                         # feed the actions into the environment
-                        observation_new, _, _, info = self.env.step(action)
+                        observation_new, r, _, info = self.env.step(action)
+
+                        ep_reward += r
+                        if 'cost' in info.keys():
+                            ep_cost += info['cost']
+
                         obs_new = observation_new['observation']
                         ag_new = observation_new['achieved_goal']
                         # append rollouts
@@ -104,6 +109,9 @@ class ddpg_agent:
                         # re-assign the observation
                         obs = obs_new
                         ag = ag_new
+
+                    self.logger.store(EpReward=ep_reward, EpCost=ep_cost)
+
                     ep_obs.append(obs.copy())
                     ep_ag.append(ag.copy())
                     mb_obs.append(ep_obs)
@@ -125,7 +133,7 @@ class ddpg_agent:
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network, self.critic_network)
             # start to do the evaluation
-            success_rate = self._eval_agent()
+            self._eval_agent()
 
             # save some necessary objects
             # self.logger.save_state will also save pytorch's model implicitly.
@@ -139,9 +147,12 @@ class ddpg_agent:
                     self.env_params['max_timesteps'])
 
             self.logger.log_tabular('Epoch', epoch+1)
-            self.logger.log_tabular('SuccessRate', success_rate)
-            self.logger.log_tabular('LossPi')
-            self.logger.log_tabular('LossQ')
+            self.logger.log_tabular('EpReward', with_min_and_max=True)
+            self.logger.log_tabular('EpCost', with_min_and_max=True)
+            self.logger.log_tabular('TestEpReward', with_min_and_max=True)
+            self.logger.log_tabular('TestEpCost', with_min_and_max=True)
+            self.logger.log_tabular('LossPi', with_min_and_max=True)
+            self.logger.log_tabular('LossQ', with_min_and_max=True)
             self.logger.log_tabular('TotalEnvInteracts', t)
             self.logger.dump_tabular()
 
@@ -265,24 +276,21 @@ class ddpg_agent:
 
     # do the evaluation
     def _eval_agent(self):
-        total_success_rate = []
         for _ in range(self.args.n_test_rollouts):
-            per_success_rate = []
-            observation = self.env.reset()
+            observation, ep_reward, ep_cost = self.env.reset(), 0.0, 0.0
             obs = observation['observation']
             g = observation['desired_goal']
-            for _ in range(self.env_params['max_timesteps']):
+            # for _ in range(self.env_params['max_timesteps']):
+            for _ in range(self.env.num_steps):
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
                     pi = self.actor_network(input_tensor)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
-                observation_new, _, _, info = self.env.step(actions)
+                observation_new, r, _, info = self.env.step(actions)
+                ep_reward += r
+                if 'cost' in info.keys():
+                    ep_cost += info['cost']
                 obs = observation_new['observation']
                 g = observation_new['desired_goal']
-                per_success_rate.append(info['is_success'])
-            total_success_rate.append(per_success_rate)
-        total_success_rate = np.array(total_success_rate)
-        local_success_rate = np.mean(total_success_rate[:, -1])
-        global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
-        return global_success_rate / MPI.COMM_WORLD.Get_size()
+            self.logger.store(TestEpReward=ep_reward, TestEpCost=ep_cost)
