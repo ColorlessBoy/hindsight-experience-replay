@@ -31,7 +31,6 @@ class Test:
         self.args = args
         self.env = gym.make(args.env_name)
         self.env_params = get_env_params(self.env)
-
         self.video_file = 'data_test/test_video'
         self.output_dir = 'data_test'
         self.exp_name = 'test'
@@ -64,29 +63,38 @@ class Test:
 
     def run(self):
         self._eval_agent()
-        self.logger.log_tabular('EpReward')
-        self.logger.log_tabular('EpCost')
+        self.logger.log_tabular('EpReward', with_min_and_max=True)
+        self.logger.log_tabular('EpCost', with_min_and_max=True)
         self.logger.dump_tabular()
 
-    def _preproc_inputs(self, obs):
+    def _preproc_inputs(self, obs, g):
+        obs = np.clip(obs, -self.args.clip_obs, self.args.clip_obs)
+        g = np.clip(g, -self.args.clip_obs, self.args.clip_obs)
         obs_norm = np.clip((obs-self.obs_mean)/self.obs_std, 
                             -self.args.clip_range, self.args.clip_range)
+        g_norm = np.clip((g-self.g_mean)/self.g_std,
+                            -self.args.clip_range, self.args.clip_range)
         # concatenate the stuffs
-        inputs = torch.tensor(obs_norm, dtype=torch.float32).unsqueeze(0)
+        inputs = np.concatenate([obs_norm, g_norm])
+        inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             inputs = inputs.cuda(self.device)
         return inputs
 
     def _eval_agent(self):
+        print(self.env_params['max_timesteps'])
         for _ in range(self.args.n_test_rollouts):
-            obs, ep_reward, ep_cost = self.env.reset(), 0, 0
+            print("New epoch.")
+            observation, ep_reward, ep_cost = self.env.reset(), 0, 0
+            obs = observation['observation']
+            goal = observation['desired_goal']
             for _ in range(self.env_params['max_timesteps']):
                 if self.args.render:
                     self.env.render()
                     time.sleep(1e-3)
 
                 with torch.no_grad():
-                    input_tensor = self._preproc_inputs(obs)
+                    input_tensor = self._preproc_inputs(obs, goal)
                     if self.args.alg == 'gac':
                         pi = self.actor_network(input_tensor, std=0.5)
                     elif self.args.alg == 'sac':
@@ -95,9 +103,11 @@ class Test:
                         pi = self.actor_network(input_tensor)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
-                obs, reward, cost, info = self.env.step(actions)
-                ep_reward += reward
-                ep_cost += cost
+                observation, reward, done, info = self.env.step(actions)
+                obs = observation['observation']
+                goal = observation['desired_goal']
+                ep_reward += info.get('goal_met', 0.0)
+                ep_cost += info.get('cost', 0.0)
                 self.logger.store(EpReward=ep_reward, EpCost=ep_cost)
 
 if __name__ == '__main__':
