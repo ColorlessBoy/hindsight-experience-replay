@@ -46,8 +46,10 @@ class Test:
         data = joblib.load(data_file)
 
         ## load obs_mean obs_std g_mean g_std
-        self.obs_mean = data['observation_mean']
-        self.obs_std  = data['observation_std']
+        self.obs_mean = data['o_norm']['mean']
+        self.obs_std  = data['o_norm']['std']
+        self.g_mean   = data['g_norm']['mean']
+        self.g_std    = data['g_norm']['std']
 
         ## load policy model
         model = {
