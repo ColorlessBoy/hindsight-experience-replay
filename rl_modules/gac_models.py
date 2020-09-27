@@ -23,8 +23,8 @@ class actor(nn.Module):
         epsilon = (std * torch.randn(x.shape[0], self.epsilon_dim, 
                     device=x.device)).clamp(-epsilon_limit, epsilon_limit)
         x = torch.cat([x, epsilon], dim=1)
-        x = F.tanh(self.fc1(x))
-        x = F.tanh(self.fc2(x))
+        x = torch.tanh(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
         actions = self.max_action * torch.tanh(self.action_out(x))
 
         return actions
@@ -39,8 +39,8 @@ class critic(nn.Module):
 
     def forward(self, x, actions):
         x = torch.cat([x, actions / self.max_action], dim=1)
-        x = F.tanh(self.fc1(x))
-        x = F.tanh(self.fc2(x))
+        x = torch.tanh(self.fc1(x))
+        x = torch.tanh(self.fc2(x))
         q_value = self.q_out(x)
 
         return q_value

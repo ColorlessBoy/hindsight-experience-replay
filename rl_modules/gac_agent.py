@@ -91,6 +91,7 @@ class gac_agent:
 
         """
         # start to collect samples
+        start_train = False
         for epoch in range(self.args.n_epochs):
             for _ in range(self.args.n_cycles):
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
@@ -125,6 +126,16 @@ class gac_agent:
                         # re-assign the observation
                         obs = obs_new
                         ag = ag_new
+
+                        if (self.buffer.current_size >= 4) and (t % self.args.n_batches == 0):
+                            for _ in range(self.args.n_batches):
+                                # train the network
+                                self._update_network()
+                            # soft update
+                            # self._soft_update_target_network(self.actor_target_network, self.actor_network)
+                            self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
+                            self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
+                            start_train = True
                     
                     self.logger.store(EpReward=ep_reward, EpCost=ep_cost)
 
@@ -134,6 +145,7 @@ class gac_agent:
                     mb_ag.append(ep_ag)
                     mb_g.append(ep_g)
                     mb_actions.append(ep_actions)
+
                 # convert them into arrays
                 mb_obs = np.array(mb_obs)
                 mb_ag = np.array(mb_ag)
@@ -142,37 +154,32 @@ class gac_agent:
                 # store the episodes
                 self.buffer.store_episode([mb_obs, mb_ag, mb_g, mb_actions])
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
-                for _ in range(self.args.n_batches):
-                    # train the network
-                    self._update_network()
-                # soft update
-                # self._soft_update_target_network(self.actor_target_network, self.actor_network)
-                self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
-                self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
-            # start to do the evaluation
-            self._eval_agent()
+            
+            if start_train:
+                # start to do the evaluation
+                self._eval_agent()
 
-            # save some necessary objects
-            # self.logger.save_state will also save pytorch's model implicitly.
-            # self.logger.save_state({'env':self.env, 'o_norm':self.o_norm, 'g_norm':self.g_norm}, None)
-            state = {'env':self.env, 'o_norm':self.o_norm.get(), 'g_norm':self.g_norm.get()}
-            self.logger.save_state(state, None)
+                # save some necessary objects
+                # self.logger.save_state will also save pytorch's model implicitly.
+                # self.logger.save_state({'env':self.env, 'o_norm':self.o_norm, 'g_norm':self.g_norm}, None)
+                state = {'env':self.env, 'o_norm':self.o_norm.get(), 'g_norm':self.g_norm.get()}
+                self.logger.save_state(state, None)
 
-            t = ((epoch+1) * self.args.n_cycles * 
-                    self.args.num_rollouts_per_mpi * 
-                    MPI.COMM_WORLD.Get_size() * 
-                    self.env_params['max_timesteps'])
+                t = ((epoch+1) * self.args.n_cycles * 
+                        self.args.num_rollouts_per_mpi * 
+                        MPI.COMM_WORLD.Get_size() * 
+                        self.env_params['max_timesteps'])
 
-            self.logger.log_tabular('Epoch', epoch+1)
-            self.logger.log_tabular('EpReward', with_min_and_max=True)
-            self.logger.log_tabular('EpCost', with_min_and_max=True)
-            self.logger.log_tabular('TestEpReward', with_min_and_max=True)
-            self.logger.log_tabular('TestEpCost', with_min_and_max=True)
-            self.logger.log_tabular('LossPi', with_min_and_max=True)
-            self.logger.log_tabular('LossQ', with_min_and_max=True)
-            self.logger.log_tabular('MMDEntropy', with_min_and_max=True)
-            self.logger.log_tabular('TotalEnvInteracts', t)
-            self.logger.dump_tabular()
+                self.logger.log_tabular('Epoch', epoch+1)
+                self.logger.log_tabular('EpReward', with_min_and_max=True)
+                self.logger.log_tabular('EpCost', with_min_and_max=True)
+                self.logger.log_tabular('TestEpReward', with_min_and_max=True)
+                self.logger.log_tabular('TestEpCost', with_min_and_max=True)
+                self.logger.log_tabular('LossPi', with_min_and_max=True)
+                self.logger.log_tabular('LossQ', with_min_and_max=True)
+                self.logger.log_tabular('MMDEntropy', with_min_and_max=True)
+                self.logger.log_tabular('TotalEnvInteracts', t)
+                self.logger.dump_tabular()
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):

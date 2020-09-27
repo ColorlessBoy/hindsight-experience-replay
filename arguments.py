@@ -11,7 +11,7 @@ def get_args():
     parser.add_argument('--alg', type=str, default='ddpg', help='the algorithm name')
     parser.add_argument('--env-name', type=str, default='FetchReach-v1', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=50, help='the number of epochs to train the agent')
-    parser.add_argument('--n-cycles', type=int, default=50, help='the times to collect samples per epoch')
+    parser.add_argument('--n-cycles', type=int, default=1, help='the times to collect samples per epoch')
     parser.add_argument('--n-batches', type=int, default=40, help='the times to update the network')
     parser.add_argument('--save-interval', type=int, default=5, help='the interval that save the trajectory')
     parser.add_argument('--seed', type=int, default=123, help='random seed')
