@@ -62,6 +62,8 @@ class gac_agent:
         self.rank = MPI.COMM_WORLD.Get_rank()
         if args.cuda:
             device = 'cuda:{}'.format(self.rank % torch.cuda.device_count())
+        else:
+            device = 'cpu'
         self.device = torch.device(device)
 
         if self.args.cuda:
@@ -112,6 +114,7 @@ class gac_agent:
                         observation_new, _, _, info = self.env.step(action)
                         obs_new = observation_new['observation']
                         ag_new = observation_new['achieved_goal']
+                        g_new = observation_new['desired_goal']
                         # append rollouts
                         ep_obs.append(obs.copy())
                         ep_ag.append(ag.copy())
@@ -120,6 +123,7 @@ class gac_agent:
                         # re-assign the observation
                         obs = obs_new
                         ag = ag_new
+                        g = g_new
                     ep_obs.append(obs.copy())
                     ep_ag.append(ag.copy())
                     mb_obs.append(ep_obs)
@@ -137,12 +141,12 @@ class gac_agent:
                 for _ in range(self.args.n_batches):
                     # train the network
                     self._update_network()
-                # soft update
-                # self._soft_update_target_network(self.actor_target_network, self.actor_network)
-                self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
-                self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
+                    # soft update
+                    # self._soft_update_target_network(self.actor_target_network, self.actor_network)
+                    self._soft_update_target_network(self.critic_target_network1, self.critic_network1)
+                    self._soft_update_target_network(self.critic_target_network2, self.critic_network2)
             # start to do the evaluation
-            success_rate = self._eval_agent()
+            ep_ret = self._eval_agent()
 
             # save some necessary objects
             # self.logger.save_state will also save pytorch's model implicitly.
@@ -156,7 +160,7 @@ class gac_agent:
                     self.env_params['max_timesteps'])
 
             self.logger.log_tabular('Epoch', epoch+1)
-            self.logger.log_tabular('SuccessRate', success_rate)
+            self.logger.log_tabular('TestEpRet', ep_ret)
             self.logger.log_tabular('LossPi')
             self.logger.log_tabular('LossQ')
             self.logger.log_tabular('MMDEntropy')
@@ -309,9 +313,8 @@ class gac_agent:
 
     # do the evaluation
     def _eval_agent(self):
-        total_success_rate = []
+        ep_ret = 0.0
         for _ in range(self.args.n_test_rollouts):
-            per_success_rate = []
             observation = self.env.reset()
             obs = observation['observation']
             g = observation['desired_goal']
@@ -324,9 +327,5 @@ class gac_agent:
                 observation_new, _, _, info = self.env.step(actions)
                 obs = observation_new['observation']
                 g = observation_new['desired_goal']
-                per_success_rate.append(info['is_success'])
-            total_success_rate.append(per_success_rate)
-        total_success_rate = np.array(total_success_rate)
-        local_success_rate = np.mean(total_success_rate[:, -1])
-        global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
-        return global_success_rate / MPI.COMM_WORLD.Get_size()
+                ep_ret += info.get('goal_met', 0.0)
+        return ep_ret/self.args.n_test_rollouts
